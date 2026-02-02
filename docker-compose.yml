@@ -1,5 +1,5 @@
 services:
-  # PostgreSQL
+  # --- PostgreSQL ---
   db:
     image: postgres:16-alpine
     container_name: messenger-db
@@ -13,12 +13,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Redis
+  # --- Redis ---
   redis:
     image: redis:7-alpine
     container_name: messenger-redis
@@ -29,7 +29,7 @@ services:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
 
-  # MinIO
+  # --- MinIO ---
   minio:
     image: minio/minio
     container_name: messenger-minio

@@ -1,0 +1,44 @@
+version: '3'
+
+vars:
+  # Строка подключения.
+  DB_DSN: "postgres://postgres:postgres_password@localhost:5432/messenger_db?sslmode=disable"
+  MIGRATIONS_DIR: "schema/migrations"
+
+tasks:
+  # Запуск docker
+  up:
+    desc: Start docker containers
+    cmds:
+      - docker-compose up -d
+
+  # Остановка docker
+  down:
+    desc: Stop docker containers
+    cmds:
+      - docker-compose down
+
+  # Статус миграций
+  db:status:
+    desc: Check migrations status
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} postgres "{{.DB_DSN}}" status
+
+  # Выгрузить миграции
+  db:up:
+    desc: Apply all pending migrations
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} postgres "{{.DB_DSN}}" up
+
+  # Откатить последнюю миграцию
+  db:down:
+    desc: Rollback the last migration
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} postgres "{{.DB_DSN}}" down
+
+  # Создать новый файл миграции
+  # Использование: task db:create name=add_users_table
+  db:create:
+    desc: Create a new SQL migration file
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} create {{.CLI_ARGS}} sql
