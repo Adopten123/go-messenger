@@ -48,13 +48,14 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// 3. Calling a service
 	user, err := h.service.CreateUser(r.Context(), req.Email, req.Username, req.Password)
 	if err != nil {
+		fmt.Printf("FAILED TO CREATE USER: %v\n", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// 4. Making response
 	resp := RegisterResponse{
-		ID:       fmt.Sprintf("%x", user.ID.String()),
+		ID:       user.ID.String(),
 		Username: user.Username,
 		Email:    user.Email,
 	}

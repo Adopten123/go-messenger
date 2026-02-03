@@ -7,4 +7,4 @@ http_server:
   idle_timeout: "60s"
 
 database:
-  dsn: "postgres://postgres:postgres_password@localhost:5432/messenger_db?sslmode=disable"
+  dsn: "postgres://postgres:postgres_password@localhost:5433/messenger_db?sslmode=disable"
