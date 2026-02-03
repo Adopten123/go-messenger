@@ -31,6 +31,15 @@ type RegisterResponse struct {
 	Email    string `json:"email"`
 }
 
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Token string `json:"token"`
+}
+
 func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// 1. Decoding JSON from the request-body
 	var req RegisterRequest
@@ -66,7 +75,27 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	token, err := h.service.Login(r.Context(), req.Email, req.Password)
+	if err != nil {
+		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	resp := LoginResponse{Token: token}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // RegisterRoutes - logs paths related to users
 func (h *UserHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/register", h.Register)
+	r.Post("/login", h.Login)
 }

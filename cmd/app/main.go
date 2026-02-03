@@ -43,7 +43,7 @@ func main() {
 	// 4. Init layers
 	repo := pgdb.New(pool)
 
-	userService := service.NewUserService(repo)
+	userService := service.NewUserService(repo, cfg.TokenSecret)
 	userHandler := handler.NewUserHandler(userService)
 
 	// 5. Init router
