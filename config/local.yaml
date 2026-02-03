@@ -1,5 +1,6 @@
 env: "local"
 storage_path: "./storage"
+token_secret: "my-secret"
 
 http_server:
   address: "localhost:8082"

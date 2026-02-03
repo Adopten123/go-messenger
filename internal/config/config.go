@@ -11,8 +11,11 @@ import (
 type Config struct {
 	Env         string `yaml:"env" env-default:"local"`
 	StoragePath string `yaml:"storage_path" env-required:"true"`
-	HTTPServer  `yaml:"http_server"`
-	Database    `yaml:"database"`
+
+	TokenSecret string `yaml:"token_secret" env-default:"super-secret-key-change-me"`
+
+	HTTPServer `yaml:"http_server"`
+	Database   `yaml:"database"`
 }
 
 type HTTPServer struct {
