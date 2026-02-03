@@ -6,15 +6,18 @@ import (
 	"net/http"
 
 	"github.com/Adopten123/go-messenger/internal/service"
-	"github.com/go-chi/chi/v5"
 )
 
 type UserHandler struct {
-	service *service.UserService
+	service     *service.UserService
+	tokenSecret string
 }
 
-func NewUserHandler(service *service.UserService) *UserHandler {
-	return &UserHandler{service: service}
+func NewUserHandler(service *service.UserService, tokenSecret string) *UserHandler {
+	return &UserHandler{
+		service:     service,
+		tokenSecret: tokenSecret,
+	}
 }
 
 // RegisterRequest - Struct of JSON-request
@@ -94,8 +97,10 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// RegisterRoutes - logs paths related to users
-func (h *UserHandler) RegisterRoutes(r chi.Router) {
-	r.Post("/register", h.Register)
-	r.Post("/login", h.Login)
+// GetMe - test method, returns the current user ID
+func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	// Getting the ID from the context (where the Middleware put it)
+	userID := r.Context().Value(UserIDKey).(string)
+
+	w.Write([]byte("You are logged in as user ID: " + userID))
 }

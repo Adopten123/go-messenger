@@ -44,7 +44,7 @@ func main() {
 	repo := pgdb.New(pool)
 
 	userService := service.NewUserService(repo, cfg.TokenSecret)
-	userHandler := handler.NewUserHandler(userService)
+	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret)
 
 	// 5. Init router
 
@@ -53,8 +53,16 @@ func main() {
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	router.Route("/api/users", func(r chi.Router) {
-		userHandler.RegisterRoutes(r)
+	router.Route("/api", func(r chi.Router) {
+		r.Post("/users/register", userHandler.Register)
+		r.Post("/users/login", userHandler.Login)
+
+		r.Group(func(r chi.Router) {
+			r.Use(userHandler.AuthMiddleware)
+			r.Get("/users/me", userHandler.GetMe)
+
+			// TODO: Add chats
+		})
 	})
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
