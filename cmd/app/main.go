@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Adopten123/go-messenger/internal/handler"
+	"github.com/Adopten123/go-messenger/internal/service"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,8 +40,11 @@ func main() {
 	}
 	log.Info("connected to database")
 
-	// 4. Init repo
-	_ = pgdb.New(pool)
+	// 4. Init layers
+	repo := pgdb.New(pool)
+
+	userService := service.NewUserService(repo)
+	userHandler := handler.NewUserHandler(userService)
 
 	// 5. Init router
 
@@ -47,6 +52,10 @@ func main() {
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+
+	router.Route("/api/users", func(r chi.Router) {
+		userHandler.RegisterRoutes(r)
+	})
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Welcome to GO-Messenger!"))

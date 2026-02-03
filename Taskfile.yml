@@ -48,3 +48,7 @@ tasks:
     desc: Generate Go code from SQL
     cmds:
       - sqlc generate
+
+  run:
+    desc: run application
+    cmd: go run cmd/app/main.go
