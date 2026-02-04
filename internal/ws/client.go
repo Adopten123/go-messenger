@@ -13,7 +13,7 @@ type EventType string
 const (
 	EventNewMessage EventType = "new_message"
 	EventMarkRead   EventType = "mark_read"
-	Event
+	EventTyping EventType = "typing"
 )
 
 type IncomingMessage struct {

@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Adopten123/go-messenger/internal/handler"
 	"github.com/Adopten123/go-messenger/internal/service"
@@ -113,16 +117,38 @@ func main() {
 	log.Info("server starting", slog.String("address", cfg.HTTPServer.Address))
 
 	srv := &http.Server{
-		Addr:         cfg.HTTPServer.Address,
-		Handler:      router,
-		ReadTimeout:  cfg.HTTPServer.Timeout,
-		WriteTimeout: cfg.HTTPServer.Timeout,
-		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
+		Addr:    cfg.HTTPServer.Address,
+		Handler: router,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		log.Error("failed to start server", slog.String("error", err.Error()))
+	go func() {
+		log.Info("server started", slog.String("address", cfg.HTTPServer.Address))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("failed to start server", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	sign := <-stop
+	log.Info("stopping application", slog.String("signal", sign.String()))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error("failed to stop server gracefully", slog.String("error", err.Error()))
 	}
+
+	log.Info("closing database connection")
+	pool.Close()
+
+	log.Info("closing redis connection")
+	rdb.Close()
+
+	log.Info("application stopped")
 }
 
 func setupLogger(env string) *slog.Logger {

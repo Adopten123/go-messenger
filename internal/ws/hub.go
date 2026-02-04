@@ -86,6 +86,8 @@ func (h *Hub) routeEvent(hm *HubMessage) {
 		h.handleNewMessage(hm)
 	case EventMarkRead:
 		h.handleMarkRead(hm)
+	case EventTyping:
+		h.handleTyping(hm)
 	default:
 		slog.Warn("unknown event type", "type", hm.Msg.Type)
 	}
@@ -192,4 +194,33 @@ func (h *Hub) broadcastToChat(ctx context.Context, chatUUID pgtype.UUID, msg Out
 			}(client)
 		}
 	}
+}
+
+func (h *Hub) handleTyping(hm *HubMessage) {
+	ctx := context.Background()
+
+	var chatUUID, userUUID pgtype.UUID
+	if err := chatUUID.Scan(hm.Msg.ChatID); err != nil {
+		return
+	}
+	if err := userUUID.Scan(hm.Client.UserID); err != nil {
+		return
+	}
+
+	isMember, err := h.repo.IsChatMember(ctx, pgdb.IsChatMemberParams{
+		ChatID: chatUUID,
+		UserID: userUUID,
+	})
+
+	if err != nil || !isMember {
+		return
+	}
+
+	response := OutgoingMessage{
+		Type:     EventTyping,
+		ChatID:   hm.Msg.ChatID,
+		SenderID: hm.Client.UserID,
+	}
+
+	h.broadcastToChat(ctx, chatUUID, response)
 }
