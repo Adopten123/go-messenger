@@ -4,13 +4,18 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/Adopten123/go-messenger/internal/repo/pgdb"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
-	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
+
+type HubMessage struct {
+	Client *Client
+	Msg    IncomingMessage
+}
 
 type Hub struct {
 	// clients: map [UserID] -> Client.
@@ -24,7 +29,7 @@ type Hub struct {
 	unregister chan *Client
 
 	// Channel for incoming mess
-	broadcast chan Message
+	broadcast chan *HubMessage
 
 	// DB con
 	repo *pgdb.Queries
@@ -37,7 +42,7 @@ func NewHub(repo *pgdb.Queries, rdb *redis.Client) *Hub {
 		clients:    make(map[string]*Client),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		broadcast:  make(chan Message),
+		broadcast:  make(chan *HubMessage),
 		repo:       repo,
 		rdb:        rdb,
 	}
@@ -61,7 +66,6 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client.UserID]; ok {
 				delete(h.clients, client.UserID)
-				client.Conn.Close(websocket.StatusNormalClosure, "bye")
 
 				go func(uid string) {
 					h.rdb.Del(context.Background(), "user:"+uid+":online")
@@ -70,39 +74,46 @@ func (h *Hub) Run() {
 			h.mu.Unlock()
 			slog.Info("client unregistered", "user_id", client.UserID)
 
-		case msg := <-h.broadcast:
-			h.handleMessage(msg)
+		case hubMsg := <-h.broadcast:
+			h.routeEvent(hubMsg)
 		}
 	}
 }
 
-func (h *Hub) handleMessage(msg Message) {
+func (h *Hub) routeEvent(hm *HubMessage) {
+	switch hm.Msg.Type {
+	case EventNewMessage:
+		h.handleNewMessage(hm)
+	case EventMarkRead:
+		h.handleMarkRead(hm)
+	default:
+		slog.Warn("unknown event type", "type", hm.Msg.Type)
+	}
+}
+
+// handleNewMessage: Access Check -> Save -> Mailing
+func (h *Hub) handleNewMessage(hm *HubMessage) {
+	msg := hm.Msg
+	client := hm.Client
 	ctx := context.Background()
 
 	var chatUUID, senderUUID pgtype.UUID
 	if err := chatUUID.Scan(msg.ChatID); err != nil {
+		slog.Error("invalid chat uuid", "chat_id", msg.ChatID)
 		return
 	}
-	if err := senderUUID.Scan(msg.SenderID); err != nil {
-		return
-	}
+	senderUUID.Scan(client.UserID)
 
 	isMember, err := h.repo.IsChatMember(ctx, pgdb.IsChatMemberParams{
 		ChatID: chatUUID,
 		UserID: senderUUID,
 	})
-
 	if err != nil {
-		slog.Error("failed to check chat membership", "error", err)
+		slog.Error("failed to check membership", "error", err)
 		return
 	}
-
 	if !isMember {
-		slog.Warn("access denied: user is not a member of chat",
-			"user_id", msg.SenderID,
-			"chat_id", msg.ChatID)
-
-		// TODO: add message for client
+		slog.Warn("access denied", "user_id", client.UserID, "chat_id", msg.ChatID)
 		return
 	}
 
@@ -111,38 +122,73 @@ func (h *Hub) handleMessage(msg Message) {
 		SenderID: senderUUID,
 		Content:  msg.Content,
 	})
-
 	if err != nil {
-		slog.Error("failed to save message to db", "error", err)
+		slog.Error("failed to save message", "error", err)
 		return
 	}
 
+	response := OutgoingMessage{
+		Type:      EventNewMessage,
+		ID:        savedMsg.ID.String(),
+		ChatID:    savedMsg.ChatID.String(),
+		Content:   savedMsg.Content,
+		SenderID:  savedMsg.SenderID.String(),
+		CreatedAt: savedMsg.CreatedAt.Time.Format(time.RFC3339),
+		IsRead:    false,
+	}
+
+	h.broadcastToChat(ctx, chatUUID, response)
+}
+
+// handleMarkRead - DB Update -> Send Notification
+func (h *Hub) handleMarkRead(hm *HubMessage) {
+	ctx := context.Background()
+	var chatUUID, userUUID pgtype.UUID
+
+	if err := chatUUID.Scan(hm.Msg.ChatID); err != nil {
+		return
+	}
+	userUUID.Scan(hm.Client.UserID)
+
+	err := h.repo.MarkMessagesAsRead(ctx, pgdb.MarkMessagesAsReadParams{
+		ChatID:   chatUUID,
+		SenderID: userUUID,
+	})
+	if err != nil {
+		slog.Error("failed to mark messages read", "error", err)
+		return
+	}
+
+	response := OutgoingMessage{
+		Type:     EventMarkRead,
+		ChatID:   hm.Msg.ChatID,
+		SenderID: hm.Client.UserID,
+	}
+
+	h.broadcastToChat(ctx, chatUUID, response)
+}
+
+// broadcastToChat - find chat members and send message
+func (h *Hub) broadcastToChat(ctx context.Context, chatUUID pgtype.UUID, msg OutgoingMessage) {
 	memberIDs, err := h.repo.GetChatMembers(ctx, chatUUID)
 	if err != nil {
 		slog.Error("failed to get chat members", "error", err)
 		return
 	}
 
-	responseMsg := map[string]interface{}{
-		"id":         savedMsg.ID.String(),
-		"chat_id":    savedMsg.ChatID.String(),
-		"sender_id":  savedMsg.SenderID.String(),
-		"content":    savedMsg.Content,
-		"created_at": savedMsg.CreatedAt.Time,
-	}
-
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	for _, memberIDUUID := range memberIDs {
-		memberIDs := memberIDUUID.String()
+	for _, memberUUID := range memberIDs {
+		memberID := memberUUID.String()
 
-		if client, ok := h.clients[memberIDs]; ok {
+		if client, ok := h.clients[memberID]; ok {
+			// async send
 			go func(c *Client) {
-				err := wsjson.Write(ctx, c.Conn, responseMsg)
-				if err != nil {
-					slog.Warn("failed to write message to client", "user_id", c.UserID, "error", err)
-				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				wsjson.Write(ctx, c.Conn, msg)
 			}(client)
 		}
 	}
