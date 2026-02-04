@@ -24,3 +24,8 @@ FROM messages m
 WHERE m.chat_id = $1
 ORDER BY m.created_at DESC
     LIMIT $2 OFFSET $3;
+
+-- name: MarkMessagesAsRead :exec
+UPDATE messages
+SET is_read = TRUE
+WHERE chat_id = $1 AND sender_id != $2 AND is_read = FALSE;

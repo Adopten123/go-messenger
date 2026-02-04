@@ -53,7 +53,7 @@ func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) (Chat, e
 const createMessage = `-- name: CreateMessage :one
 INSERT INTO messages (chat_id, sender_id, content)
 VALUES ($1, $2, $3)
-    RETURNING id, chat_id, sender_id, content, created_at
+    RETURNING id, chat_id, sender_id, content, created_at, is_read
 `
 
 type CreateMessageParams struct {
@@ -71,6 +71,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.SenderID,
 		&i.Content,
 		&i.CreatedAt,
+		&i.IsRead,
 	)
 	return i, err
 }
@@ -127,4 +128,20 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const markMessagesAsRead = `-- name: MarkMessagesAsRead :exec
+UPDATE messages
+SET is_read = TRUE
+WHERE chat_id = $1 AND sender_id != $2 AND is_read = FALSE
+`
+
+type MarkMessagesAsReadParams struct {
+	ChatID   pgtype.UUID `json:"chat_id"`
+	SenderID pgtype.UUID `json:"sender_id"`
+}
+
+func (q *Queries) MarkMessagesAsRead(ctx context.Context, arg MarkMessagesAsReadParams) error {
+	_, err := q.db.Exec(ctx, markMessagesAsRead, arg.ChatID, arg.SenderID)
+	return err
 }

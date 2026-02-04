@@ -20,6 +20,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	IsChatMember(ctx context.Context, arg IsChatMemberParams) (bool, error)
 	ListMessages(ctx context.Context, arg ListMessagesParams) ([]ListMessagesRow, error)
+	MarkMessagesAsRead(ctx context.Context, arg MarkMessagesAsReadParams) error
 	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) error
 }
 

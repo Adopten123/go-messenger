@@ -28,6 +28,7 @@ type Message struct {
 	SenderID  pgtype.UUID        `json:"sender_id"`
 	Content   string             `json:"content"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	IsRead    bool               `json:"is_read"`
 }
 
 type User struct {
