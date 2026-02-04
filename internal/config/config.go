@@ -17,6 +17,7 @@ type Config struct {
 	HTTPServer `yaml:"http_server"`
 	Database   `yaml:"database"`
 	Redis      `yaml:"redis"`
+	MinIO      `yaml:"minio"`
 }
 
 type HTTPServer struct {
@@ -31,6 +32,14 @@ type Database struct {
 
 type Redis struct {
 	Address string `yaml:"address" env-default:"localhost:6379"`
+}
+
+type MinIO struct {
+	Endpoint        string `yaml:"endpoint" env-default:"localhost:9000"`
+	AccessKeyID     string `yaml:"access_key_id" env-default:"minio_user"`
+	SecretAccessKey string `yaml:"secret_access_key" env-default:"minio_password"`
+	Bucket          string `yaml:"bucket" env-default:"images"`
+	UseSSL          bool   `yaml:"use_ssl" env-default:"false"`
 }
 
 func MustLoad() *Config {
