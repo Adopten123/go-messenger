@@ -8,6 +8,7 @@ import (
 
 	"github.com/Adopten123/go-messenger/internal/handler"
 	"github.com/Adopten123/go-messenger/internal/service"
+	"github.com/Adopten123/go-messenger/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,6 +47,14 @@ func main() {
 	userService := service.NewUserService(repo, cfg.TokenSecret)
 	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret)
 
+	chatService := service.NewChatService(repo, pool)
+	chatHandler := handler.NewChatHandler(chatService)
+
+	hub := ws.NewHub(repo)
+	go hub.Run()
+
+	wsHandler := ws.NewWSHandler(hub)
+
 	// 5. Init router
 
 	router := chi.NewRouter()
@@ -59,9 +68,11 @@ func main() {
 
 		r.Group(func(r chi.Router) {
 			r.Use(userHandler.AuthMiddleware)
-			r.Get("/users/me", userHandler.GetMe)
 
-			// TODO: Add chats
+			r.Get("/users/me", userHandler.GetMe)
+			r.Post("/chats", chatHandler.CreateChat)
+
+			r.Get("/ws", wsHandler.HandleWS)
 		})
 	})
 
