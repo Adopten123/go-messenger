@@ -41,7 +41,9 @@ tasks:
   db:create:
     desc: Create a new SQL migration file
     cmds:
-      - goose -dir {{.MIGRATIONS_DIR}} create {{.CLI_ARGS}} sql
+      - goose -dir {{.MIGRATIONS_DIR}} create {{.name}} sql
+    requires:
+      vars: [name]
 
   # Генерирует код из SQL
   generate:
