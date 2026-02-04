@@ -7,6 +7,7 @@ import (
 
 	"github.com/Adopten123/go-messenger/internal/service"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -14,13 +15,20 @@ type UserHandler struct {
 	service     *service.UserService
 	tokenSecret string
 	rdb         *redis.Client
+	fileService *service.FileService
 }
 
-func NewUserHandler(service *service.UserService, tokenSecret string, rdb *redis.Client) *UserHandler {
+func NewUserHandler(
+	service *service.UserService,
+	tokenSecret string,
+	rdb *redis.Client,
+	fs *service.FileService) *UserHandler {
+
 	return &UserHandler{
 		service:     service,
 		tokenSecret: tokenSecret,
 		rdb:         rdb,
+		fileService: fs,
 	}
 }
 
@@ -128,4 +136,47 @@ func (h *UserHandler) GetOnlineStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse multipart/form-data (max 10mb)
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		http.Error(w, "file very big", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Get file from form
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		http.Error(w, "invalid file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// 3. Upload in MinIO
+	url, err := h.fileService.UploadFile(
+		r.Context(), file,
+		header.Size, header.Filename, header.Header.Get("Content-Type"),
+	)
+	if err != nil {
+		http.Error(w, "failed to upload", http.StatusInternalServerError)
+		return
+	}
+
+	// 4. Update user in DB
+	userID := r.Context().Value(UserIDKey).(string)
+
+	var userUUID pgtype.UUID
+	userUUID.Scan(userID)
+
+	err = h.service.UpdateAvatar(r.Context(), userUUID, url)
+	if err != nil {
+		http.Error(w, "failed to update user profile", http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Url response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"avatar_url": url})
 }

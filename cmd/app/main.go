@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/Adopten123/go-messenger/internal/config"
@@ -55,8 +57,20 @@ func main() {
 	}
 	log.Info("connected to redis")
 
+	minioClient, err := minio.New(cfg.MinIO.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.MinIO.AccessKeyID, cfg.MinIO.SecretAccessKey, ""),
+		Secure: cfg.MinIO.UseSSL,
+	})
+	if err != nil {
+		log.Error("failed to connect to minio", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	log.Info("connected to minio")
+
+	fileService := service.NewFileService(minioClient, cfg.MinIO.Bucket, cfg.MinIO.Endpoint)
+
 	userService := service.NewUserService(repo, cfg.TokenSecret)
-	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret, rdb)
+	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret, rdb, fileService)
 
 	chatService := service.NewChatService(repo, pool)
 	chatHandler := handler.NewChatHandler(chatService)
@@ -81,6 +95,7 @@ func main() {
 			r.Use(userHandler.AuthMiddleware)
 
 			r.Get("/users/me", userHandler.GetMe)
+			r.Post("/users/me/avatar", userHandler.UploadAvatar)
 			r.Get("/users/{user_id}/status", userHandler.GetOnlineStatus)
 
 			r.Post("/chats", chatHandler.CreateChat)

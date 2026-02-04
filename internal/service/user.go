@@ -7,6 +7,7 @@ import (
 
 	"github.com/Adopten123/go-messenger/internal/repo/pgdb"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -66,4 +67,11 @@ func (s *UserService) Login(ctx context.Context, email, password string) (string
 		return "", fmt.Errorf("failed to sign token: %w", err)
 	}
 	return tokenString, nil
+}
+
+func (s *UserService) UpdateAvatar(ctx context.Context, userID pgtype.UUID, avatarURL string) error {
+	return s.repo.UpdateUserAvatar(ctx, pgdb.UpdateUserAvatarParams{
+		ID: userID,
+		AvatarUrl: pgtype.Text{String: avatarURL, Valid: true},
+	})
 }
