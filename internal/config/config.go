@@ -16,6 +16,7 @@ type Config struct {
 
 	HTTPServer `yaml:"http_server"`
 	Database   `yaml:"database"`
+	Redis      `yaml:"redis"`
 }
 
 type HTTPServer struct {
@@ -26,6 +27,10 @@ type HTTPServer struct {
 
 type Database struct {
 	DSN string `yaml:"dsn" env-required:"true"` // DSN - Data Source Name (строка подключения)
+}
+
+type Redis struct {
+	Address string `yaml:"address" env-default:"localhost:6379"`
 }
 
 func MustLoad() *Config {

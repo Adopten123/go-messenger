@@ -7,6 +7,7 @@ import (
 
 	"github.com/Adopten123/go-messenger/internal/repo/pgdb"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -27,15 +28,18 @@ type Hub struct {
 
 	// DB con
 	repo *pgdb.Queries
+	// Redis
+	rdb *redis.Client
 }
 
-func NewHub(repo *pgdb.Queries) *Hub {
+func NewHub(repo *pgdb.Queries, rdb *redis.Client) *Hub {
 	return &Hub{
 		clients:    make(map[string]*Client),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan Message),
 		repo:       repo,
+		rdb:        rdb,
 	}
 }
 
@@ -47,12 +51,21 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client.UserID] = client
 			h.mu.Unlock()
+
+			go func(uid string) {
+				h.rdb.Set(context.Background(), "user:"+uid+":online", "true", 0)
+			}(client.UserID)
+
 			slog.Info("client registered", "user_id", client.UserID)
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client.UserID]; ok {
 				delete(h.clients, client.UserID)
 				client.Conn.Close(websocket.StatusNormalClosure, "bye")
+
+				go func(uid string) {
+					h.rdb.Del(context.Background(), "user:"+uid+":online")
+				}(client.UserID)
 			}
 			h.mu.Unlock()
 			slog.Info("client unregistered", "user_id", client.UserID)

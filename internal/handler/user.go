@@ -6,17 +6,21 @@ import (
 	"net/http"
 
 	"github.com/Adopten123/go-messenger/internal/service"
+	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 type UserHandler struct {
 	service     *service.UserService
 	tokenSecret string
+	rdb         *redis.Client
 }
 
-func NewUserHandler(service *service.UserService, tokenSecret string) *UserHandler {
+func NewUserHandler(service *service.UserService, tokenSecret string, rdb *redis.Client) *UserHandler {
 	return &UserHandler{
 		service:     service,
 		tokenSecret: tokenSecret,
+		rdb:         rdb,
 	}
 }
 
@@ -103,4 +107,25 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDKey).(string)
 
 	w.Write([]byte("You are logged in as user ID: " + userID))
+}
+
+func (h *UserHandler) GetOnlineStatus(w http.ResponseWriter, r *http.Request) {
+	targetID := chi.URLParam(r, "user_id")
+	if targetID == "" {
+		http.Error(w, "user_id is required", http.StatusBadRequest)
+		return
+	}
+
+	exists, err := h.rdb.Exists(r.Context(), "user:"+targetID+":online").Result()
+	if err != nil {
+		http.Error(w, "redis error", http.StatusInternalServerError)
+		return
+	}
+
+	status := map[string]bool{
+		"online": exists > 0,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

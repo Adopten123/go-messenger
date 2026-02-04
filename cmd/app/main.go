@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/Adopten123/go-messenger/internal/config"
 	"github.com/Adopten123/go-messenger/internal/repo/pgdb"
@@ -44,13 +45,23 @@ func main() {
 	// 4. Init layers
 	repo := pgdb.New(pool)
 
+	rdb := redis.NewClient(&redis.Options{
+		Addr: cfg.Redis.Address,
+	})
+
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Error("failed to connect to redis", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	log.Info("connected to redis")
+
 	userService := service.NewUserService(repo, cfg.TokenSecret)
-	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret)
+	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret, rdb)
 
 	chatService := service.NewChatService(repo, pool)
 	chatHandler := handler.NewChatHandler(chatService)
 
-	hub := ws.NewHub(repo)
+	hub := ws.NewHub(repo, rdb)
 	go hub.Run()
 
 	wsHandler := ws.NewWSHandler(hub)
@@ -70,8 +81,9 @@ func main() {
 			r.Use(userHandler.AuthMiddleware)
 
 			r.Get("/users/me", userHandler.GetMe)
-			r.Post("/chats", chatHandler.CreateChat)
+			r.Get("/users/{user_id}/status", userHandler.GetOnlineStatus)
 
+			r.Post("/chats", chatHandler.CreateChat)
 			r.Get("/chats/{chat_id}/messages", chatHandler.GetMessages)
 
 			r.Get("/ws", wsHandler.HandleWS)

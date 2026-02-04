@@ -9,3 +9,6 @@ http_server:
 
 database:
   dsn: "postgres://postgres:postgres_password@localhost:5433/messenger_db?sslmode=disable"
+
+redis:
+  address: "localhost:6379"
