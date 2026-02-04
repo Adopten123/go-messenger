@@ -54,8 +54,8 @@ tasks:
   test:
     desc: Run functional tests
     cmds:
-      - task: db:tests:up
-      - go tests -v ./tests/...
+      - task: db:test:up
+      - go test -v ./tests/...
 
   # Генерирует код из SQL
   generate:
