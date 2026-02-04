@@ -72,6 +72,8 @@ func main() {
 			r.Get("/users/me", userHandler.GetMe)
 			r.Post("/chats", chatHandler.CreateChat)
 
+			r.Get("/chats/{chat_id}/messages", chatHandler.GetMessages)
+
 			r.Get("/ws", wsHandler.HandleWS)
 		})
 	})
