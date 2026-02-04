@@ -67,8 +67,31 @@ func (h *Hub) handleMessage(msg Message) {
 	ctx := context.Background()
 
 	var chatUUID, senderUUID pgtype.UUID
-	chatUUID.Scan(msg.ChatID)
-	senderUUID.Scan(msg.SenderID)
+	if err := chatUUID.Scan(msg.ChatID); err != nil {
+		return
+	}
+	if err := senderUUID.Scan(msg.SenderID); err != nil {
+		return
+	}
+
+	isMember, err := h.repo.IsChatMember(ctx, pgdb.IsChatMemberParams{
+		ChatID: chatUUID,
+		UserID: senderUUID,
+	})
+
+	if err != nil {
+		slog.Error("failed to check chat membership", "error", err)
+		return
+	}
+
+	if !isMember {
+		slog.Warn("access denied: user is not a member of chat",
+			"user_id", msg.SenderID,
+			"chat_id", msg.ChatID)
+
+		// TODO: add message for client
+		return
+	}
 
 	savedMsg, err := h.repo.CreateMessage(ctx, pgdb.CreateMessageParams{
 		ChatID:   chatUUID,

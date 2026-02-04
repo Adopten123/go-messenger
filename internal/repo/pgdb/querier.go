@@ -18,6 +18,7 @@ type Querier interface {
 	GetChatMembers(ctx context.Context, chatID pgtype.UUID) ([]pgtype.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	IsChatMember(ctx context.Context, arg IsChatMemberParams) (bool, error)
 	ListMessages(ctx context.Context, arg ListMessagesParams) ([]ListMessagesRow, error)
 }
 

@@ -36,3 +36,23 @@ func (q *Queries) GetChatMembers(ctx context.Context, chatID pgtype.UUID) ([]pgt
 	}
 	return items, nil
 }
+
+const isChatMember = `-- name: IsChatMember :one
+SELECT EXISTS (
+    SELECT 1
+    FROM chat_members
+    WHERE chat_id = $1 AND user_id = $2
+)
+`
+
+type IsChatMemberParams struct {
+	ChatID pgtype.UUID `json:"chat_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) IsChatMember(ctx context.Context, arg IsChatMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isChatMember, arg.ChatID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
