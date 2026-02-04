@@ -109,7 +109,7 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetMe - test method, returns the current user ID
+// GetMe - tests method, returns the current user ID
 func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	// Getting the ID from the context (where the Middleware put it)
 	userID := r.Context().Value(UserIDKey).(string)

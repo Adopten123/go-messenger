@@ -47,15 +47,15 @@ tasks:
       vars: [name]
 
   db:test:up:
-    desc: Apply migrations to test DB
+    desc: Apply migrations to tests DB
     cmds:
       - goose -dir {{.MIGRATIONS_DIR}} postgres "{{.TEST_DB_DSN}}" up
 
   test:
     desc: Run functional tests
     cmds:
-      - task: db:test:up
-      - go test -v ./tests/...
+      - task: db:tests:up
+      - go tests -v ./tests/...
 
   # Генерирует код из SQL
   generate:

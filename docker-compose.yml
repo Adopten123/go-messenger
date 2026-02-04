@@ -20,7 +20,7 @@ services:
 
   db_test:
     image: postgres:17-alpine
-    container_name: messenger-db-test
+    container_name: messenger-db-tests
     ports:
       - "5434:5432"
     environment:
