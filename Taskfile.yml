@@ -3,6 +3,7 @@ version: '3'
 vars:
   # Строка подключения.
   DB_DSN: "postgres://postgres:postgres_password@localhost:5433/messenger_db?sslmode=disable"
+  TEST_DB_DSN: "postgres://postgres:postgres_password@localhost:5434/messenger_test_db?sslmode=disable"
   MIGRATIONS_DIR: "schema/migrations"
 
 tasks:
@@ -44,6 +45,17 @@ tasks:
       - goose -dir {{.MIGRATIONS_DIR}} create {{.name}} sql
     requires:
       vars: [name]
+
+  db:test:up:
+    desc: Apply migrations to test DB
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} postgres "{{.TEST_DB_DSN}}" up
+
+  test:
+    desc: Run functional tests
+    cmds:
+      - task: db:test:up
+      - go test -v ./tests/...
 
   # Генерирует код из SQL
   generate:
