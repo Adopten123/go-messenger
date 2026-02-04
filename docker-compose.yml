@@ -18,7 +18,18 @@ services:
       timeout: 5s
       retries: 5
 
-    # --- pgAdmin ---
+  db_test:
+    image: postgres:17-alpine
+    container_name: messenger-db-test
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: messenger_test_db
+    restart: always
+
+  # --- pgAdmin ---
   pgadmin:
     image: dpage/pgadmin4
     container_name: messenger-pgadmin
