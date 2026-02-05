@@ -24,7 +24,7 @@ func TestChatFlow(t *testing.T) {
 	userHandler := handler.NewUserHandler(userService, secret_token, nil, nil)
 
 	chatService := service.NewChatService(repo, pool)
-	chatHandler := handler.NewChatHandler(chatService)
+	chatHandler := handler.NewChatHandler(chatService, userService)
 
 	r := chi.NewRouter()
 

@@ -99,3 +99,11 @@ func (s *UserService) GetUser(ctx context.Context, id string) (*pgdb.User, error
 
 	return &user, nil
 }
+
+func (s *UserService) GetUserByEmail(ctx context.Context, email string) (pgdb.User, error) {
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return pgdb.User{}, fmt.Errorf("user not found: %w", err)
+	}
+	return user, nil
+}

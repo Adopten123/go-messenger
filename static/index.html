@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Go Messenger Client</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        .hidden { display: none; }
+
+        /* Chat Styles */
+        #chat-window { height: 400px; overflow-y: scroll; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; background: #fff; }
+        .message { margin: 5px 0; padding: 8px 12px; border-radius: 15px; max-width: 70%; clear: both; }
+        .message.mine { background: #007bff; color: white; float: right; }
+        .message.theirs { background: #e4e6eb; color: black; float: left; }
+        .typing { color: #888; font-style: italic; font-size: 0.9em; height: 20px; }
+
+        .flex { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+<h1>Go Messenger 🚀</h1>
+
+<div id="auth-section" class="card">
+    <h3>Вход / Регистрация</h3>
+    <input type="text" id="username" placeholder="Username (для регистрации)">
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Password">
+    <div class="flex">
+        <button onclick="register()">Регистрация</button>
+        <button onclick="login()">Логин</button>
+    </div>
+    <p id="auth-error" style="color: red;"></p>
+</div>
+
+<div id="lobby-section" class="card hidden">
+    <h3>Привет, <span id="current-user"></span>!</h3>
+    <p>Token: <span id="token-display" style="font-size: 10px; color: #888;"></span></p>
+
+    <h4>Создать чат</h4>
+    <input type="email" id="partner-email" placeholder="Email собеседника">
+    <button onclick="createChat()">Начать чат</button>
+
+    <hr>
+    <h4>Войти в чат по ID</h4>
+    <div class="flex">
+        <input type="text" id="chat-id-input" placeholder="Chat UUID">
+        <button onclick="joinChat()">Войти</button>
+    </div>
+</div>
+
+<div id="chat-section" class="card hidden">
+    <h3 id="chat-title">Чат</h3>
+    <div id="chat-window"></div>
+    <div id="typing-indicator" class="typing"></div>
+
+    <div class="flex">
+        <input type="text" id="message-input" placeholder="Введите сообщение..." oninput="handleTyping()">
+        <button onclick="sendMessage()" style="width: 100px;">Send</button>
+    </div>
+    <button onclick="leaveChat()" style="background: #6c757d; margin-top: 10px;">Назад</button>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8082/api";
+    const WS_URL = "ws://localhost:8082/api/ws";
+
+    let state = {
+        token: null,
+        userID: null,
+        username: null,
+        chatID: null,
+        socket: null
+    };
+
+    // --- AUTH ---
+
+    async function register() {
+        const body = getAuthData();
+        const res = await fetch(`${API_URL}/users/register`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) alert("Registered! Now log in.");
+        else alert("Error: " + await res.text());
+    }
+
+    async function login() {
+        const body = getAuthData();
+        const res = await fetch(`${API_URL}/users/login`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: body.email, password: body.password })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            state.token = data.token;
+
+            // Получаем ID юзера через GetMe
+            const meRes = await fetch(`${API_URL}/users/me`, {
+                headers: { 'Authorization': `Bearer ${state.token}` }
+            });
+            const meData = await meRes.json();
+            state.userID = meData.id;
+            state.username = meData.username;
+
+            showLobby();
+            connectWS(); // Подключаем вебсокет сразу после логина
+        } else {
+            document.getElementById('auth-error').innerText = await res.text();
+        }
+    }
+
+    // --- WEBSOCKET ---
+
+    function connectWS() {
+        if (state.socket) return;
+
+        // Передаем токен в URL
+        state.socket = new WebSocket(`${WS_URL}?token=${state.token}`);
+
+        state.socket.onopen = () => console.log("WS Connected 🟢");
+
+        state.socket.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            console.log("WS Received:", msg);
+            handleWsMessage(msg);
+        };
+
+        state.socket.onclose = () => console.log("WS Disconnected 🔴");
+        state.socket.onerror = (err) => console.error("WS Error:", err);
+    }
+
+    function handleWsMessage(msg) {
+        // Если сообщение относится к текущему открытому чату
+        if (msg.chat_id === state.chatID) {
+            if (msg.type === "new_message") {
+                appendMessage(msg.content, msg.sender_id === state.userID);
+                // Отправляем подтверждение прочтения (опционально)
+                // sendMarkRead(msg.chat_id);
+            } else if (msg.type === "typing" && msg.sender_id !== state.userID) {
+                showTyping();
+            }
+        }
+    }
+
+    // --- CHAT LOGIC ---
+
+    async function createChat() {
+        const email = document.getElementById('partner-email').value;
+        const res = await fetch(`${API_URL}/chats`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${state.token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username: "Partner", partner_email: email }) // Упрощено для примера
+            // Примечание: В твоем коде создание чата может требовать username или email, проверь handler
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            state.chatID = data.chat_id;
+            enterChat();
+        } else {
+            alert("Error creating chat: " + await res.text());
+        }
+    }
+
+    function joinChat() {
+        state.chatID = document.getElementById('chat-id-input').value;
+        if(state.chatID) enterChat();
+    }
+
+    async function enterChat() {
+        document.getElementById('lobby-section').classList.add('hidden');
+        document.getElementById('chat-section').classList.remove('hidden');
+        document.getElementById('chat-title').innerText = `Чат: ${state.chatID}`;
+        document.getElementById('chat-window').innerHTML = ''; // Очистить старое
+
+        // Загрузка истории (REST)
+        const res = await fetch(`${API_URL}/chats/${state.chatID}/messages?limit=50`, {
+            headers: { 'Authorization': `Bearer ${state.token}` }
+        });
+        if (res.ok) {
+            const msgs = await res.json();
+            // Сообщения приходят от новых к старым (обычно), поэтому реверс для отображения
+            msgs.reverse().forEach(m => {
+                appendMessage(m.content, m.sender_id === state.userID);
+            });
+            scrollToBottom();
+        }
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('message-input');
+        const content = input.value;
+        if (!content) return;
+
+        const msg = {
+            type: "new_message",
+            chat_id: state.chatID,
+            content: content
+        };
+
+        state.socket.send(JSON.stringify(msg));
+        // Мы не добавляем сообщение сами, ждем пока оно вернется через WS (echo)
+        // Либо можно добавить оптимистично:
+        // appendMessage(content, true);
+
+        input.value = '';
+    }
+
+    // Тайпинг
+    let typingTimeout;
+    function handleTyping() {
+        state.socket.send(JSON.stringify({
+            type: "typing",
+            chat_id: state.chatID
+        }));
+    }
+
+    function showTyping() {
+        const el = document.getElementById('typing-indicator');
+        el.innerText = "Собеседник печатает...";
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            el.innerText = "";
+        }, 3000);
+    }
+
+    // --- UI HELPERS ---
+
+    function getAuthData() {
+        return {
+            username: document.getElementById('username').value,
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value
+        };
+    }
+
+    function showLobby() {
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('lobby-section').classList.remove('hidden');
+        document.getElementById('current-user').innerText = state.username;
+        document.getElementById('token-display').innerText = state.token.substring(0, 20) + "...";
+    }
+
+    function leaveChat() {
+        document.getElementById('chat-section').classList.add('hidden');
+        document.getElementById('lobby-section').classList.remove('hidden');
+        state.chatID = null;
+    }
+
+    function appendMessage(text, isMine) {
+        const div = document.createElement('div');
+        div.className = `message ${isMine ? 'mine' : 'theirs'}`;
+        div.innerText = text;
+        const win = document.getElementById('chat-window');
+        win.appendChild(div);
+        // Очистка float
+        const clear = document.createElement('div');
+        clear.style.clear = 'both';
+        win.appendChild(clear);
+        scrollToBottom();
+    }
+
+    function scrollToBottom() {
+        const win = document.getElementById('chat-window');
+        win.scrollTop = win.scrollHeight;
+    }
+</script>
+</body>
+</html>

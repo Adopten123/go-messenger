@@ -22,17 +22,14 @@ func NewChatService(repo *pgdb.Queries, pool *pgxpool.Pool) *ChatService {
 }
 
 func (s *ChatService) CreateChat(ctx context.Context, name string, creatorID string, userIDs []string) (*pgdb.Chat, error) {
-	// 1. Start transaction
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	// 2. Making transaction version of repo
 	qtx := s.repo.WithTx(tx)
 
-	// 3. Making chat
 	isGroup := name != ""
 
 	chatParams := pgdb.CreateChatParams{
@@ -45,7 +42,6 @@ func (s *ChatService) CreateChat(ctx context.Context, name string, creatorID str
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}
 
-	// 4. Add members in chat (first invite for admin)
 	var creatorUUID pgtype.UUID
 	if err := creatorUUID.Scan(creatorID); err != nil {
 		return nil, fmt.Errorf("invalid creator UUID: %w", err)
@@ -81,7 +77,6 @@ func (s *ChatService) CreateChat(ctx context.Context, name string, creatorID str
 		}
 	}
 
-	// 5. Making transaction
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -90,7 +85,6 @@ func (s *ChatService) CreateChat(ctx context.Context, name string, creatorID str
 
 // GetMessages - return chat history with pagination
 func (s *ChatService) GetMessages(ctx context.Context, chatID string, userID string, limit, offset int) ([]pgdb.ListMessagesRow, error) {
-	// 1. ID to UUID
 	var ChatUUID pgtype.UUID
 	if err := ChatUUID.Scan(chatID); err != nil {
 		return nil, fmt.Errorf("invalid chat ID: %w", err)
@@ -100,16 +94,19 @@ func (s *ChatService) GetMessages(ctx context.Context, chatID string, userID str
 	if err := UserUUID.Scan(userID); err != nil {
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
-	// 2. Checking access
+
 	isMember, err := s.repo.IsChatMember(ctx, pgdb.IsChatMemberParams{
 		ChatID: ChatUUID,
 		UserID: UserUUID,
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to check membership: %w", err)
+	}
 	if !isMember {
 		return nil, fmt.Errorf("access denied")
 	}
 
-	// 3. Making request to DB
 	params := pgdb.ListMessagesParams{
 		ChatID: ChatUUID,
 		Limit:  int32(limit),

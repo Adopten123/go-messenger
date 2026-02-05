@@ -1,154 +1,26 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"log/slog"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"github.com/Adopten123/go-messenger/internal/handler"
-	"github.com/Adopten123/go-messenger/internal/service"
-	"github.com/Adopten123/go-messenger/internal/ws"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/redis/go-redis/v9"
-
+	"github.com/Adopten123/go-messenger/internal/app"
 	"github.com/Adopten123/go-messenger/internal/config"
-	"github.com/Adopten123/go-messenger/internal/repo/pgdb"
 )
 
 func main() {
-	// 1. Init config
-	os.Setenv("CONFIG_PATH", "./config/local.yaml") // TODO: hardcode for dev
-
+	// 1. Load Config
+	os.Setenv("CONFIG_PATH", "./config/local.yaml") // TODO: remove hardcode in prod
 	cfg := config.MustLoad()
 
-	// 2. Init logger
+	// 2. Init Logger
 	log := setupLogger(cfg.Env)
-	log.Info("starting application", slog.String("env", cfg.Env))
+	log.Info("initializing application", slog.String("env", cfg.Env))
 
-	// 3. Connection to DB
-	pool, err := pgxpool.New(context.Background(), cfg.Database.DSN)
-	if err != nil {
-		log.Error("failed to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	defer pool.Close()
+	// 3. Init & Run
+	application := app.New(log, cfg)
 
-	if err := pool.Ping(context.Background()); err != nil {
-		log.Error("failed to ping database", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	log.Info("connected to database")
-
-	// 4. Init layers
-	repo := pgdb.New(pool)
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.Redis.Address,
-	})
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Error("failed to connect to redis", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	log.Info("connected to redis")
-
-	minioClient, err := minio.New(cfg.MinIO.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.MinIO.AccessKeyID, cfg.MinIO.SecretAccessKey, ""),
-		Secure: cfg.MinIO.UseSSL,
-	})
-	if err != nil {
-		log.Error("failed to connect to minio", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	log.Info("connected to minio")
-
-	fileService := service.NewFileService(minioClient, cfg.MinIO.Bucket, cfg.MinIO.Endpoint)
-
-	userService := service.NewUserService(repo, cfg.TokenSecret)
-	userHandler := handler.NewUserHandler(userService, cfg.TokenSecret, rdb, fileService)
-
-	chatService := service.NewChatService(repo, pool)
-	chatHandler := handler.NewChatHandler(chatService)
-
-	hub := ws.NewHub(repo, rdb)
-	go hub.Run()
-
-	wsHandler := ws.NewWSHandler(hub)
-
-	// 5. Init router
-
-	router := chi.NewRouter()
-	router.Use(middleware.RequestID)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-
-	router.Route("/api", func(r chi.Router) {
-		r.Post("/users/register", userHandler.Register)
-		r.Post("/users/login", userHandler.Login)
-
-		r.Group(func(r chi.Router) {
-			r.Use(userHandler.AuthMiddleware)
-
-			r.Get("/users/me", userHandler.GetMe)
-			r.Post("/users/me/avatar", userHandler.UploadAvatar)
-			r.Get("/users/{user_id}/status", userHandler.GetOnlineStatus)
-
-			r.Post("/chats", chatHandler.CreateChat)
-			r.Get("/chats/{chat_id}/messages", chatHandler.GetMessages)
-
-			r.Get("/ws", wsHandler.HandleWS)
-		})
-	})
-
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Welcome to GO-Messenger!"))
-	})
-
-	// 6. Starting Server
-	log.Info("server starting", slog.String("address", cfg.HTTPServer.Address))
-
-	srv := &http.Server{
-		Addr:    cfg.HTTPServer.Address,
-		Handler: router,
-	}
-
-	go func() {
-		log.Info("server started", slog.String("address", cfg.HTTPServer.Address))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("failed to start server", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-	}()
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	sign := <-stop
-	log.Info("stopping application", slog.String("signal", sign.String()))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Error("failed to stop server gracefully", slog.String("error", err.Error()))
-	}
-
-	log.Info("closing database connection")
-	pool.Close()
-
-	log.Info("closing redis connection")
-	rdb.Close()
-
-	log.Info("application stopped")
+	application.Run()
 }
 
 func setupLogger(env string) *slog.Logger {

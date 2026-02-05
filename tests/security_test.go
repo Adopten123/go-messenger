@@ -23,7 +23,7 @@ func TestChatAccessDenied(t *testing.T) {
 	userService := service.NewUserService(repo, secret_token)
 	userHandler := handler.NewUserHandler(userService, secret_token, nil, nil)
 	chatService := service.NewChatService(repo, pool)
-	chatHandler := handler.NewChatHandler(chatService)
+	chatHandler := handler.NewChatHandler(chatService, userService)
 
 	r := chi.NewRouter()
 	r.Post("/users/register", userHandler.Register)

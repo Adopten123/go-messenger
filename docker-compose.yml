@@ -70,6 +70,13 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
 
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./static/index.html:/usr/share/nginx/html/index.html:ro
+
 volumes:
   postgres_data:
   redis_data:

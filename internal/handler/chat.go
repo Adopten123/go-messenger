@@ -11,31 +11,49 @@ import (
 )
 
 type ChatHandler struct {
-	service *service.ChatService
+	service     *service.ChatService
+	userService *service.UserService
 }
 
-func NewChatHandler(service *service.ChatService) *ChatHandler {
-	return &ChatHandler{service: service}
+func NewChatHandler(service *service.ChatService, userService *service.UserService) *ChatHandler {
+	return &ChatHandler{
+		service:     service,
+		userService: userService,
+	}
 }
 
 type CreateChatRequest struct {
-	Name    string   `json:"name"`
-	UserIDs []string `json:"user_ids"`
+	Name         string   `json:"name"`
+	UserIDs      []string `json:"user_ids"`
+	PartnerEmail string   `json:"partner_email"`
 }
 
 func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
-	// 1. Decoding
+	// 1. Getting ID
+	creatorID, ok := r.Context().Value(UserIDKey).(string)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Decoding
 	var req CreateChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// 2. Getting ID
-	creatorID, ok := r.Context().Value(UserIDKey).(string)
-	if !ok {
-		http.Error(w, "user not found in context", http.StatusUnauthorized)
-		return
+	if req.PartnerEmail != "" {
+		user, err := h.userService.GetUserByEmail(r.Context(), req.PartnerEmail)
+		if err != nil {
+			http.Error(w, "partner with this email not found", http.StatusBadRequest)
+			return
+		}
+		req.UserIDs = append(req.UserIDs, user.ID.String())
+
+		if req.Name == "" {
+			req.Name = user.Username
+		}
 	}
 
 	// 3. Calling server
