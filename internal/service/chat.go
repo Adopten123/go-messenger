@@ -89,14 +89,27 @@ func (s *ChatService) CreateChat(ctx context.Context, name string, creatorID str
 }
 
 // GetMessages - return chat history with pagination
-func (s *ChatService) GetMessages(ctx context.Context, chatID string, limit, offset int) ([]pgdb.ListMessagesRow, error) {
+func (s *ChatService) GetMessages(ctx context.Context, chatID string, userID string, limit, offset int) ([]pgdb.ListMessagesRow, error) {
 	// 1. ID to UUID
 	var ChatUUID pgtype.UUID
 	if err := ChatUUID.Scan(chatID); err != nil {
 		return nil, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// 2. Making request to DB
+	var UserUUID pgtype.UUID
+	if err := UserUUID.Scan(userID); err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	// 2. Checking access
+	isMember, err := s.repo.IsChatMember(ctx, pgdb.IsChatMemberParams{
+		ChatID: ChatUUID,
+		UserID: UserUUID,
+	})
+	if !isMember {
+		return nil, fmt.Errorf("access denied")
+	}
+
+	// 3. Making request to DB
 	params := pgdb.ListMessagesParams{
 		ChatID: ChatUUID,
 		Limit:  int32(limit),

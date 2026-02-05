@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type UserService struct {
@@ -23,11 +26,11 @@ func NewUserService(repo *pgdb.Queries, tokenSecret string) *UserService {
 	}
 }
 
-func (s *UserService) CreateUser(ctx context.Context, email, username, password string) (pgdb.User, error) {
+func (s *UserService) CreateUser(ctx context.Context, email, username, password string) (*pgdb.User, error) {
 	// Main registration method
 	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return pgdb.User{}, fmt.Errorf("failed to hash password: %w", err)
+		return &pgdb.User{}, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	params := pgdb.CreateUserParams{
@@ -38,9 +41,16 @@ func (s *UserService) CreateUser(ctx context.Context, email, username, password 
 
 	user, err := s.repo.CreateUser(ctx, params)
 	if err != nil {
-		return pgdb.User{}, fmt.Errorf("failed to create user: %w", err)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23505" {
+				return nil, fmt.Errorf("user with this email already exists")
+			}
+		}
+
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
-	return user, nil
+	return &user, nil
 }
 
 func (s *UserService) Login(ctx context.Context, email, password string) (string, error) {
@@ -71,7 +81,21 @@ func (s *UserService) Login(ctx context.Context, email, password string) (string
 
 func (s *UserService) UpdateAvatar(ctx context.Context, userID pgtype.UUID, avatarURL string) error {
 	return s.repo.UpdateUserAvatar(ctx, pgdb.UpdateUserAvatarParams{
-		ID: userID,
+		ID:        userID,
 		AvatarUrl: pgtype.Text{String: avatarURL, Valid: true},
 	})
+}
+
+func (s *UserService) GetUser(ctx context.Context, id string) (*pgdb.User, error) {
+	var userUUID pgtype.UUID
+	if err := userUUID.Scan(id); err != nil {
+		return nil, fmt.Errorf("invalid uuid format: %w", err)
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	return &user, nil
 }

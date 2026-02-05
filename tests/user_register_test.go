@@ -14,10 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	secret_token = "test_secret"
-)
-
 func TestRegisterUser(t *testing.T) {
 	pool := SetupTestDB(t)
 	defer pool.Close()

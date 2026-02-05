@@ -62,6 +62,11 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chat_id is required", http.StatusBadRequest)
 		return
 	}
+	userID, ok := r.Context().Value(UserIDKey).(string)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
 
 	// 2. Parse query params
 	limit := 50
@@ -82,8 +87,12 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Calling service
-	messages, err := h.service.GetMessages(r.Context(), chatID, limit, offset)
+	messages, err := h.service.GetMessages(r.Context(), chatID, userID, limit, offset)
 	if err != nil {
+		if err.Error() == "access denied" {
+			http.Error(w, "access denied", http.StatusForbidden)
+			return
+		}
 		http.Error(w, "failed to fetch messages", http.StatusInternalServerError)
 		return
 	}
